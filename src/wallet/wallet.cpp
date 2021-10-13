@@ -2713,17 +2713,16 @@ struct CompareByPriority
     }
 };
 
-bool CWallet::FundTransaction(CMutableTransaction& tx, CAmount &nFeeRet, int& nChangePosRet, std::string& strFailReason, bool includeWatching)
+bool CWallet::FundTransaction(CMutableTransaction& tx, CAmount &nFeeRet, int& nChangePosRet, std::string& strFailReason, bool includeWatching, const std::set<int>& setSubtractFeeFromOutputs)
 {
     vector<CRecipient> vecSend;
 
-    // Turn the txout set into a CRecipient vector
-    BOOST_FOREACH(const CTxOut& txOut, tx.vout)
-    {
-        CRecipient recipient = {txOut.scriptPubKey, txOut.nValue, false};
+//  Turn the txout set into a CRecipient vector
+    for (size_t idx = 0; idx < tx.vout.size(); idx++) {
+        const CTxOut& txOut = tx.vout[idx];
+        CRecipient recipient = {txOut.scriptPubKey, txOut.nValue, setSubtractFeeFromOutputs.count(idx) == 1};
         vecSend.push_back(recipient);
     }
-
     CCoinControl coinControl;
     coinControl.fAllowOtherInputs = true;
     coinControl.fAllowWatchOnly = includeWatching;
@@ -2737,6 +2736,16 @@ bool CWallet::FundTransaction(CMutableTransaction& tx, CAmount &nFeeRet, int& nC
 
     if (nChangePosRet != -1)
         tx.vout.insert(tx.vout.begin() + nChangePosRet, wtx.vout[nChangePosRet]);
+
+    // Copy output sizes from new transaction; they may have had the fee    
+    // subtracted from them.
+    for (unsigned int i = 0; i < tx.vout.size(); i++) {     
+        for (unsigned int j = 0; j < wtx.vout.size(); j++) {
+            if(tx.vout[i].scriptPubKey == wtx.vout[j].scriptPubKey){            
+                tx.vout[i].nValue = wtx.vout[j].nValue;
+            }
+        }     
+    }
 
     // Add new txins (keeping original txin scriptSig/order)
     BOOST_FOREACH(const CTxIn& txin, wtx.vin)

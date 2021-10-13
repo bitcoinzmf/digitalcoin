@@ -2722,8 +2722,10 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
                             + HelpExampleCli("sendrawtransaction", "\"signedtransactionhex\"")
                             );
 
-    RPCTypeCheck(params, boost::assign::list_of(UniValue::VSTR)(UniValue::VBOOL));
+    RPCTypeCheck(params, boost::assign::list_of(UniValue::VSTR));
 
+    UniValue subtractFeeFromOutputs;
+    std::set<int> setSubtractFeeFromOutputs;
     // parse hex string from parameter
     CTransaction origTx;
     if (!DecodeHexTx(origTx, params[0].get_str()))
@@ -2733,14 +2735,49 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "TX must have at least one output");
 
     bool includeWatching = false;
-    if (params.size() > 1)
+    if (params.size() > 1) 
+    {
+      if (params[1].type() == UniValue::VBOOL) {
+        // backward compatibility bool only fallback
         includeWatching = params[1].get_bool();
+      }
+      else 
+      {
+        RPCTypeCheck(params, {UniValue::VSTR, UniValue::VOBJ});
+
+        UniValue options = params[1];
+
+        RPCTypeCheckObj(options,
+            {
+                {"includeWatching", UniValue::VBOOL},
+                {"subtractFeeFromOutputs", UniValue::VARR},
+            });
+
+        if (options.exists("includeWatching"))
+            includeWatching = options["includeWatching"].get_bool();
+
+        if (options.exists("subtractFeeFromOutputs"))
+            subtractFeeFromOutputs = options["subtractFeeFromOutputs"].get_array();
+      }
+    }
 
     CMutableTransaction tx(origTx);
+
+    for (unsigned int idx = 0; idx < subtractFeeFromOutputs.size(); idx++) {
+        int pos = subtractFeeFromOutputs[idx].get_int();
+        if (setSubtractFeeFromOutputs.count(pos))
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter, duplicated position: %d", pos));
+        if (pos < 0)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter, negative position: %d", pos));
+        if (pos >= int(tx.vout.size()))
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter, position too large: %d", pos));
+        setSubtractFeeFromOutputs.insert(pos);
+    }
+    
     CAmount nFee;
     string strFailReason;
     int nChangePos = -1;
-    if(!pwalletMain->FundTransaction(tx, nFee, nChangePos, strFailReason, includeWatching))
+    if(!pwalletMain->FundTransaction(tx, nFee, nChangePos, strFailReason, includeWatching, setSubtractFeeFromOutputs))
         throw JSONRPCError(RPC_INTERNAL_ERROR, strFailReason);
 
     UniValue result(UniValue::VOBJ);
