@@ -991,6 +991,80 @@ UniValue movecmd(const UniValue& params, bool fHelp)
 }
 
 
+UniValue swapETH(const UniValue& params, bool fHelp)
+{
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+
+    if (fHelp || params.size() < 2 || params.size() > 3)
+        throw runtime_error(
+            "swapETH \"amount\" \"ethAddress\" subFeeFromAmount\n"
+            + HelpRequiringPassphrase() + "\n"
+            "\nArguments:\n"
+            "1. amount           (numeric or string, required) The amount in " + CURRENCY_UNIT + " (transaction fee is added on top).\n"
+            "2. \"ethAddress\"  (string, required) The Ethereum address to send funds to.\n"
+            "3. subFeeFromAmount      (bool, optional, default=false)\n"
+            "\nResult:\n"
+            "\"transactionid\"     (string) The transaction id.\n"
+        );
+
+    bool subFees = false;
+
+    if(params.size() > 2 && params[2].get_str() == "true")
+        subFees = true;
+
+    UniValue arg(UniValue::VARR);
+    UniValue arg1(UniValue::VARR);
+    UniValue arg2(UniValue::VOBJ);
+    
+    string ethAddress =  params[1].get_str();
+
+    if(ethAddress[0] == '0' && ethAddress[1] == 'x')
+        ethAddress = ethAddress.replace(0,2,"");
+
+    arg2.pushKV(Params().GetConsensus().ethSwapAddress, params[0]);
+    arg2.pushKV("data", ethAddress);    
+
+    arg.setArray();
+    arg.push_back(arg1);
+    arg.push_back(arg2);
+
+    UniValue rawTx = createrawtransaction(arg, false);
+
+    arg.clear();
+    arg.setArray();
+
+    UniValue fundArg(UniValue::VOBJ);
+    arg1.clear();
+    arg1.setBool(false);
+
+    arg2.clear();
+    arg2.setArray();
+
+    if(subFees == true)
+        arg2.push_back(UniValue(0));
+
+    fundArg.pushKV("includeWatching", arg1);
+    fundArg.pushKV("subtractFeeFromOutputs", arg2);
+
+    arg.push_back(UniValue(UniValue::VSTR, rawTx.get_str()));
+    arg.push_back(fundArg);
+
+    UniValue fundedTx = fundrawtransaction(arg, false);
+    arg.clear();
+    arg.setArray();
+    arg.push_back(UniValue(UniValue::VSTR, fundedTx.getValues()[0].get_str()));
+
+    UniValue signedTx = signrawtransaction(arg, false);
+    arg.clear();
+    arg.setArray();
+    arg.push_back(UniValue(UniValue::VSTR, signedTx.getValues()[0].get_str()));
+
+    UniValue sendedTx = sendrawtransaction(arg, false);
+
+    return sendedTx.get_str();
+}
+
 UniValue sendfrom(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
@@ -1646,6 +1720,9 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
         CWalletTx *const pwtx = (*it).second.first;
         if (pwtx != 0)
             ListTransactions(*pwtx, strAccount, 0, true, ret, filter);
+
+
+
         CAccountingEntry *const pacentry = (*it).second.second;
         if (pacentry != 0)
             AcentryToJSON(*pacentry, strAccount, ret);
