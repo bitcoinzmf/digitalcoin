@@ -1065,6 +1065,86 @@ UniValue swapETH(const UniValue& params, bool fHelp)
     return sendedTx.get_str();
 }
 
+UniValue sendwithdata(const UniValue& params, bool fHelp)
+{
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+
+    if (fHelp || params.size() < 3 || params.size() > 4)
+        throw runtime_error(
+            "sendwithdata \"amount\" \"to\" \"hexData\" subFeeFromAmount\n"
+            + HelpRequiringPassphrase() + "\n"
+            "\nArguments:\n"
+            "1. amount           (numeric or string, required) The amount in " + CURRENCY_UNIT + " (transaction fee is added on top).\n"
+            "2. to  (string, required) The Ethereum address to send funds to.\n"
+            "3. hexData  (string, required) The Ethereum address to send funds to.\n"
+            "4. subFeeFromAmount      (bool, optional, default=false)\n"
+            "\nResult:\n"
+            "\"transactionid\"     (string) The transaction id.\n"
+        );
+
+    bool subFees = false;
+
+    if(params.size() > 3 && params[3].get_str() == "true")
+        subFees = true;
+
+    CBitcoinAddress address(params[1].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Digitalcoin address");
+
+    UniValue arg(UniValue::VARR);
+    UniValue arg1(UniValue::VARR);
+    UniValue arg2(UniValue::VOBJ);
+    
+    string hexData =  params[2].get_str();
+
+    if(hexData[0] == '0' && hexData[1] == 'x')
+        hexData = hexData.replace(0,2,"");
+
+    arg2.pushKV(params[1].get_str(), params[0]);
+    arg2.pushKV("data", hexData);    
+
+    arg.setArray();
+    arg.push_back(arg1);
+    arg.push_back(arg2);
+
+    UniValue rawTx = createrawtransaction(arg, false);
+
+    arg.clear();
+    arg.setArray();
+
+    UniValue fundArg(UniValue::VOBJ);
+    arg1.clear();
+    arg1.setBool(false);
+
+    arg2.clear();
+    arg2.setArray();
+
+    if(subFees == true)
+        arg2.push_back(UniValue(0));
+
+    fundArg.pushKV("includeWatching", arg1);
+    fundArg.pushKV("subtractFeeFromOutputs", arg2);
+
+    arg.push_back(UniValue(UniValue::VSTR, rawTx.get_str()));
+    arg.push_back(fundArg);
+
+    UniValue fundedTx = fundrawtransaction(arg, false);
+    arg.clear();
+    arg.setArray();
+    arg.push_back(UniValue(UniValue::VSTR, fundedTx.getValues()[0].get_str()));
+
+    UniValue signedTx = signrawtransaction(arg, false);
+    arg.clear();
+    arg.setArray();
+    arg.push_back(UniValue(UniValue::VSTR, signedTx.getValues()[0].get_str()));
+
+    UniValue sendedTx = sendrawtransaction(arg, false);
+
+    return sendedTx.get_str();
+}
+
+
 UniValue sendfrom(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
